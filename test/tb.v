@@ -1,7 +1,10 @@
 `default_nettype none
 `timescale 1ns / 1ps
-
+/* This testbench just instantiates the module and makes some convenient wires
+   that can be driven / tested by the cocotb test.py.
+*/
 module tb ();
+  // Dump the signals to a VCD file. You can view it with gtkwave or surfer.
   initial begin
     $dumpfile("tb.vcd");
     $dumpvars(0, tb);
@@ -23,9 +26,10 @@ module tb ();
   wire VGND = 1'b0;
 `endif
   
- tt_um_aes_ctrl user_project (
-      
-     `ifdef GL_TEST
+  // Replace tt_um_example with your module name:
+  tt_um_alu_trojan user_project (
+      // Include power ports for the Gate Level test:
+`ifdef GL_TEST
       .VPWR(VPWR),
       .VGND(VGND),
 `endif
@@ -39,79 +43,47 @@ module tb ();
       .rst_n  (rst_n)     // not reset
   );
   
-  // Clock generation (100MHz)
-  always #5 clk = ~clk;
+  // Helper wires for ALU signals
+  wire [3:0] a = ui_in[3:0];
+  wire [3:0] b = ui_in[7:4];
+  wire [1:0] op = uio_in[1:0];
+  wire [3:0] res = uo_out[3:0];
+  wire cout = uo_out[4];
   
-  // FSM State monitor for Test 1 only
-  always @(posedge clk) begin
-    if (rst_n && $time > 20 && $time < 500)  // Only during Test 1
-      $display("[%0t ns] State=%0d, Round=%0d, Ready=%b", 
-               $time, user_project.state, user_project.round_count, uio_out[0]);
-  end
+  integer i, j, k;
   
-  // Test procedure
   initial begin
-    // Initialize
+    // Initialize signals
     clk = 0;
     rst_n = 0;
     ena = 1;
-    ui_in = 8'h00;
-    uio_in = 8'h00;
+    ui_in = 0;
+    uio_in = 0;
     
-    $display("Starting AES Test...\n");
+    // Release reset
+    #10 rst_n = 1;
+    #10;
     
-    // Test 1: Data=0xAA, Key=0x55 (with FSM monitoring)
-    $display("=== Test 1: Data=0xAA, Key=0x55 (FSM States Shown) ===");
-    #20 rst_n = 1;
-    ui_in = 8'hAA;
-    uio_in = 8'h55;
-    wait(uio_out[0] == 1);
-    $display("Result: 0x%h\n", uo_out);
+    // Test all op codes and all input combinations
+    for (k = 0; k < 4; k = k + 1) begin
+      uio_in[1:0] = k;  // Set operation
+      for (i = 15; i >= 0; i = i - 1) begin
+        for (j = 15; j >= 0; j = j - 1) begin
+          ui_in[3:0] = i;  // Set input A
+          ui_in[7:4] = j;  // Set input B
+          #10;
+          
+          // Display results
+          $display("op=%b a=%d b=%d res=%d cout=%b", op, a, b, res, cout);
+        end
+      end
+    end
     
-    // Test 2: Data=0x12, Key=0x34
-    #20 rst_n = 0;
-    #20 rst_n = 1;
-    ui_in = 8'h12;
-    uio_in = 8'h34;
-    $display("Test 2: Data=0x%h, Key=0x%h", ui_in, uio_in);
-    wait(uio_out[0] == 1);
-    $display("Result: 0x%h\n", uo_out);
-    
-    // Test 3: Data=0xFF, Key=0xFF
-    #20 rst_n = 0;
-    #20 rst_n = 1;
-    ui_in = 8'hFF;
-    uio_in = 8'hFF;
-    $display("Test 3: Data=0x%h, Key=0x%h", ui_in, uio_in);
-    wait(uio_out[0] == 1);
-    $display("Result: 0x%h\n", uo_out);
-    
-    // Test 4: Data=0x00, Key=0x00
-    #20 rst_n = 0;
-    #20 rst_n = 1;
-    ui_in = 8'h00;
-    uio_in = 8'h00;
-    $display("Test 4: Data=0x%h, Key=0x%h", ui_in, uio_in);
-    wait(uio_out[0] == 1);
-    $display("Result: 0x%h\n", uo_out);
-    
-    //Test Case 5: Pattern Test Data=0x5A, Key=0xA5
-    #20 rst_n = 0;
-    #20 rst_n = 1;
-    ui_in = 8'h5A;
-    uio_in = 8'hA5;
-    $display("Test 5: Data=0x%h, Key=0x%h", ui_in, uio_in);
-    wait(uio_out[0] == 1);
-    $display("Result: 0x%h\n", uo_out);
-         
-    $display("All tests complete!");
-    #200 $finish;
-  end
-  
-  // Timeout protection
-  initial begin
-    #50000;
-    $display("ERROR: Timeout!");
+    #10;
     $finish;
   end
+  
+  // Clock generation (if needed for synchronous designs)
+  always #5 clk = ~clk;
+  
 endmodule
